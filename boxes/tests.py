@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.utils import timezone
-from django.core.urlresolvers import reverse
+from django.urls import reverse
+from django.core import mail
 from humans.models import User
 from datetime import timedelta
 from .models import Box, Message
@@ -159,6 +160,17 @@ class SubmitBoxFormTests(TestCase):
                               "file_name": "test"})
         self.assertEqual(form.is_valid(), True)
 
+    def test_add_reply_to_is_present(self):
+        form = SubmitBoxForm({"message": ENCRYPTED_MESSAGE,
+                              "add_reply_to": "on"})
+        self.assertEqual(form.is_valid(), True)
+        self.assertTrue(form.cleaned_data.get("add_reply_to"))
+
+    def test_add_reply_to_is_not_present(self):
+        form = SubmitBoxForm({"message": ENCRYPTED_MESSAGE})
+        self.assertEqual(form.is_valid(), True)
+        self.assertFalse(form.cleaned_data.get("add_reply_to"))
+
 
 class BoxListViewTests(TestCase):
 
@@ -242,13 +254,77 @@ class BoxSubmitViewTests(TestCase):
         response = self.client.get(reverse("boxes_show", args=(box.uuid,)))
         self.assertEqual(response.template_name, 'boxes/closed.html')
 
+    def test_box_not_found(self):
+        user = create_and_login_user(self.client)
+        user.public_key = VALID_KEY
+        user.fingerprint = VALID_KEY_FINGERPRINT
+        user.save()
+        box = create_open_box(user)
+        box.delete()
+        response = self.client.get(reverse("boxes_show", args=(box.uuid,)))
+        self.assertEqual(response.status_code, 404)
+
+
+class BoxCreateViewTests(TestCase):
+
+    def test_create_new_box(self):
+        user = create_and_login_user(self.client)
+        user.public_key = VALID_KEY
+        user.fingerprint = VALID_KEY_FINGERPRINT
+        user.save()
+        response = self.client.post(reverse("boxes_create"), {
+                                    "name": "test",
+                                    "never_expires": True,
+                                    "max_messages": 1})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(user.boxes.count(), 1)
+        self.assertEqual(user.boxes.first().name, "test")
+
+
+class BoxDeleteViewTests(TestCase):
+
+    def test_delete_existing_box(self):
+        user = create_and_login_user(self.client)
+        create_boxes(user)
+        box = user.own_boxes.filter(name="open").first()
+        response = self.client.post(reverse("boxes_delete", args=(box.id,)))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(user.own_boxes.count(), 3)
+
+    def test_cannot_delete_box_that_are_not_open(self):
+        user = create_and_login_user(self.client)
+        create_boxes(user)
+        box = user.own_boxes.filter(name="closed").first()
+        response = self.client.post(reverse("boxes_delete", args=(box.id,)))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(user.own_boxes.count(), 4)
+
+
+class BoxCloseView(TestCase):
+
+    def test_close_an_open_box(self):
+        user = create_and_login_user(self.client)
+        create_boxes(user)
+        box = user.own_boxes.filter(name="open").first()
+        response = self.client.post(reverse("boxes_close", args=(box.id,)))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(user.own_boxes.filter(status=Box.CLOSED).count(), 2)
+
+    def test_close_box_that_is_not_open(self):
+        user = create_and_login_user(self.client)
+        create_boxes(user)
+        box = user.own_boxes.filter(name="sent").first()
+        response = self.client.post(reverse("boxes_close", args=(box.id,)))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(user.own_boxes.filter(status=Box.CLOSED).count(), 1)
+
 
 class MailTaskTests(TestCase):
 
     def test_email_sending(self):
         """
-            With a valid box_id an email is sent and the box status is changed
-            to sent
+            With a valid message_id an email is sent and the Message status
+            is changed to sent
         """
         user = create_and_login_user(self.client)
         create_boxes(user)
@@ -257,5 +333,21 @@ class MailTaskTests(TestCase):
         process_email(message.id, {"message": ENCRYPTED_MESSAGE})
         after_box = user.own_boxes.get(id=initial_box.id)
         after_msg = after_box.messages.get(id=message.id)
-        #self.assertEqual(message.status, Message.SENT)
+        message.refresh_from_db()
+        self.assertEqual(message.status, Message.SENT)
         self.assertEqual(after_msg.sent_at, after_box.last_sent_at)
+        self.assertEqual(len(mail.outbox[0].reply_to), 0)
+
+    def test_email_sending_with_reply_to(self):
+        mail.outbox = []
+        user = create_and_login_user(self.client)
+        create_boxes(user)
+        initial_box = user.own_boxes.all()[0]
+        message = initial_box.messages.create()
+        process_email(
+            message.id, {"message": ENCRYPTED_MESSAGE}, sent_by=user.email
+        )
+        message.refresh_from_db()
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(user.email, mail.outbox[0].reply_to)
+        self.assertEqual(message.status, Message.SENT)

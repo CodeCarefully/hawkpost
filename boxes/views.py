@@ -1,6 +1,6 @@
 from django.views.generic import ListView, CreateView, DeleteView, UpdateView
-from django.http import HttpResponseRedirect
-from django.core.urlresolvers import reverse_lazy
+from django.http import Http404, HttpResponseRedirect
+from django.urls import reverse_lazy
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib import messages
 from django.utils import timezone
@@ -47,7 +47,7 @@ class BoxCreateView(JSONResponseMixin, LoginRequiredMixin, CreateView):
     def dispatch(self, request, *args, **kwargs):
         # Check if user can create boxes:
         user = request.user
-        if user.is_authenticated() and not user.has_setup_complete():
+        if user.is_authenticated and not user.has_setup_complete():
             url = reverse_lazy("humans_update") + "?setup=1"
             return self.render_to_response({"location": url})
 
@@ -139,8 +139,8 @@ class BoxSubmitView(UpdateView):
         try:
             q = queryset.select_related('owner').prefetch_related('recipients')
             return q.get(uuid=self.kwargs.get("box_uuid"))
-        except ValueError:
-            raise ObjectDoesNotExist(_('Not Found. Double check your URL'))
+        except (ValueError, Box.DoesNotExist):
+            raise Http404(_('Not Found. Double check your URL'))
 
     def dispatch(self, request, *args, **kwargs):
         self.object = self.get_object()
@@ -166,6 +166,7 @@ class BoxSubmitView(UpdateView):
     def post(self, request, *args, **kwargs):
         form = self.get_form(data={"data": request.POST})
         if form.is_valid():
+            cleaned_data = form.cleaned_data
             message = self.object.messages.create()
 
             # Mark box as done
@@ -173,8 +174,16 @@ class BoxSubmitView(UpdateView):
                 self.object.status = Box.DONE
                 self.object.save()
 
+            add_user_email = cleaned_data.get("add_reply_to", False)
+            if request.user.is_authenticated and add_user_email:
+                user_email = request.user.email
+            else:
+                user_email = None
+
             # Schedule e-mail
-            process_email.delay(message.id, form.cleaned_data)
+            process_email.delay(
+                message.id, form.cleaned_data, sent_by=user_email
+            )
 
             return self.response_class(
                 request=self.request,

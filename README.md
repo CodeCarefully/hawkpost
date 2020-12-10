@@ -1,10 +1,8 @@
-Hawkpost
-========
+# Hawkpost
 
 Hawkpost lets you create unique links that you can share with the person that desires to send you important information but doesn't know how to deal with PGP.
 
 You can deploy your own server using the code from this repository or use the official server (that is running an exact copy of this repo) at [https://hawkpost.co](https://hawkpost.co).
-
 
 ## Rationale
 
@@ -17,134 +15,52 @@ The way it works is like this:
 1. The server then signs (**experimental**) the encrypted content.
 1. Finally the server forwards it to your e-mail address.
 
-
 # Setting up a development environment
 
 In this section you can find the steps to setup a minimal development environment on your machine.
 
 Base requirements:
 
-* Python 3
-* Redis
-* PostgreSQL
-* gulp
+- Python 3
+- Redis
+- PostgreSQL
 
-## Linux
+## On Linux
 
 On a **Debian** based operating system execute the following steps, after cloning the repository:
 
-* Install VirtualEnv and VirtualEnvWrapper
+* Make sure you have `pipenv` installed. You can check [this page for more information](https://pipenv.readthedocs.io/en/latest/install/#installing-pipenv)
+
+- Install the dependencies
 
 ```
-$ sudo apt-get install python-virtualenvwrapper
+$ pipenv install
 ```
 
-(follow their installation steps)
+- Create the local postgreSQL database with your user and no password
 
-* Create a virtual environment, using python3
-
-```
-$ mkvirtualenv hawkpost --python=python3
-```
-
-* Install the dependencies
+- Migrate the database
 
 ```
-$ pip install -r requirements/requirements_dev.txt
+$ pipenv run python manage.py migrate
 ```
 
-* Create the local postgreSQL database with your user and no password
-
-* Migrate the database
-
-```
-$ python manage.py migrate
-```
-
-* Generate stylesheet
+- Generate stylesheet with gulp (installation instructions for gulp can be found [here](https://gulpjs.com/))
 
 ```
 $ gulp build
 ```
 
-* Now you should be able to launch the server and its workers
+- Now you should be able to launch the server and its workers
 
 ```
-$ python manage.py runserver
-$ celery -A hawkpost worker --beat -l info
+$ pipenv run python manage.py runserver
+$ pipenv run celery -A hawkpost worker --beat -l info
 ```
 
-## OSX
+You can avoid `pipenv run` in every command if you first active the virtual environment with `pipenv shell`.
 
-First, install [Postgres.app](http://postgresapp.com/) and make sure it's in the Applications folder. Add `/Applications/Postgres.app/Contents/Versions/latest/bin` to your $PATH.
-
-Steps:
-
-* Update [Homebrew](http://brew.sh/)
-
-```
-$ brew update
-```
-
-* Update [Pip](https://pip.pypa.io/en/stable/installing/)
-
-```
-$ sudo pip install --upgrade pip
-```
-
-* Install the latest 2.7.x version and 3.x of Python via Homebrew
-
-```
-$ brew install python
-$ brew install python3
-```
-
-* Install Virtualenv
-
-```
-$ pip install virtualenv
-```
-
-* Setup Virtualenv
-```
-$ mkdir ~/.virtualenvs
-$ cd ~/.virtualenvs
-$ virtualenv hawkpost --python=python3
-$ source hawkpost/bin/activate
-```
-
-* Clone the project, go to the folder and install the dependencies
-
-```
-$ pip install -r requirements/requirements_dev.txt
-```
-
-* Create the database for the first time
-
-```
-$ psql CREATE DATABASE hawkpost_dev;
-```
-
-* Prepare the database
-
-```
-$ python manage.py migrate
-```
-
-* Generate stylesheet
-
-```
-$ gulp build
-```
-
-* Now you should be able to launch the server and its workers
-
-```
-$ python manage.py runserver
-$ celery -A hawkpost worker --beat -l info
-```
-
-## Docker
+## Using Docker
 
 To use this approach you need to have [Docker][docker-overview] and
 [Docker Compose][docker-compose-overview] installed.
@@ -180,10 +96,6 @@ DB_HOST=db
 DB_USER=hawkpost
 DB_PASSWORD=hawkpost
 REDIS_URL=redis://redis:6379/0
-SIGN_KEY=/home/user/.gnupg/key.gpg
-SIGN_DIR=/home/user/.gnupg
-SIGN_KEY_PASSPHRASE=<your-signing-key-password>
-EMAIL_HOST=mail_debug
 ```
 
 **Don't forget to set the remaining variables** as well.
@@ -197,11 +109,11 @@ $ docker-compose up -d db redis
 
 # Perform the migrations
 # (using `--rm` to remove the temporary container afterwards)
-$ docker-compose run --rm web python manage.py migrate
+$ docker-compose run --rm web pipenv run python manage.py migrate
 
-# Run the web, celery and mail_debug containers
+# Run the web and celery containers
 # (`docker-compose up` would log db and redis as well)
-$ docker-compose up web celery mail_debug
+$ docker-compose up web celery
 ```
 
 These commands
@@ -210,9 +122,8 @@ These commands
    we're not bothered by their logs while working on the application.
 1. **Perform the migrations** using a temporary `web` container; it is removed
    afterwards.
-1. **Run the `web`, `celery` and `mail_debug` containers** attached to the
-   console. `mail_debug` is optional since it is only used when debugging the
-   e-mails being sent.
+1. **Run the `web` and `celery`** attached to the
+   console.
 
 The `web` container will reload on code changes.
 
@@ -237,6 +148,16 @@ network feature may require additional steps.
 [docker-compose-versioning]: https://docs.docker.com/compose/compose-file/#versioning
 [docker-install-docs]: https://docs.docker.com/engine/installation
 [docker-compose-install-docs]: https://github.com/docker/compose/releases
+
+# Running the test suite
+
+To execute our current test suite, you just need to execute the following command after setting up your local development environment:
+
+> \$ pipenv run python manage.py test
+
+In case you are using our docker setup the command should be:
+
+> \$ docker-compose run --rm web pipenv run python manage.py test
 
 # Credits
 

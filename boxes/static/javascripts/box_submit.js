@@ -8,7 +8,6 @@ $(document).ready(function () {
     var content;
     var contentType;
     var contentFromFile = $("#id_source").is(':checked');
-    var serverSigned = $('.server-signed-js').text() === 'True';
 
     if (contentFromFile) {
       var file = $('#id_file_select')[0].files[0];
@@ -20,8 +19,7 @@ $(document).ready(function () {
       reader.readAsArrayBuffer(file);
 
     } else {
-      contentType = serverSigned ? 'Content-Type: text/plain\n\n' : '';
-      content = contentType + $("#id_plain").val();
+      content = $("#id_plain").val();
       encryptAndSend(content, null);
     }
     return false;
@@ -128,6 +126,7 @@ $(document).ready(function () {
    * Only when javascript is enabled, the form is created.
    */
   function createBox() {
+    var authenticated_user = $("#authenticated_user").length
     var $formDiv = $(".form-div-js");
 
     /* Hidden form fields */
@@ -147,6 +146,13 @@ $(document).ready(function () {
 
     var $encryptedMessage = $("<input id='id_message' name='message' type='hidden'></input>");
     $form.append($encryptedMessage);
+
+    if (authenticated_user) {
+      var $replyLabel = $("<label id='id_reply_label' for='id_add_reply_to'>Add own email to ReplyTo</label>");
+      var $replyInput = $("<input class='box_submit_input' id='id_add_reply_to' name='add_reply_to' type='checkbox'></input>");
+      var $replyGroup = $("<div class='box_submit_checkbox'></div>").append($replyLabel).append($replyInput);
+      $form.append($replyGroup);
+    }
 
     $formDiv.append($form);
 
